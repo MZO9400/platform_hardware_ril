@@ -282,10 +282,7 @@ static void dispatchUiccSubscripton(Parcel &p, RequestInfo *pRI);
 static void dispatchSimAuthentication(Parcel &p, RequestInfo *pRI);
 static void dispatchDataProfile(Parcel &p, RequestInfo *pRI);
 static void dispatchRadioCapability(Parcel &p, RequestInfo *pRI);
-static void dispatchSetCarrierRestrictions(Parcel &p, RequestInfo *pRI);
-static void dispatchGetCarrierRestrictions(Parcel &p, RequestInfo *pRI);
 static void dispatchOpenChannelWithP2(Parcel &p, RequestInfo *pRI);
-static void dispatchAdnRecord(Parcel &p, RequestInfo *pRI);
 static int responseInts(Parcel &p, void *response, size_t responselen);
 static int responseFailCause(Parcel &p, void *response, size_t responselen);
 static int responseStrings(Parcel &p, void *response, size_t responselen);
@@ -927,6 +924,14 @@ dispatchSIM_IO (Parcel &p, RequestInfo *pRI) {
     memset (&simIO, 0, sizeof(simIO));
 
     // note we only check status at the end
+    #ifdef VENDOR_EDIT 
+    simIO.v6.cla = 0;
+    if(pRI->pCI->requestNumber != RIL_REQUEST_SIM_IO) {
+        status = p.readInt32(&t);
+        simIO.v6.cla = (int)t;
+    }
+    #endif /* VENDOR_EDIT */
+
 
     status = p.readInt32(&t);
     simIO.v6.command = (int)t;
@@ -2143,115 +2148,6 @@ invalid:
 }
 
 /**
- * Callee expects const RIL_CarrierRestrictions *
- */
-static void dispatchSetCarrierRestrictions(Parcel &p, RequestInfo *pRI) {
-    RIL_CarrierRestrictions cr;
-    RIL_Carrier * allowed_carriers = NULL;
-    RIL_Carrier * excluded_carriers = NULL;
-    int32_t t;
-    status_t status;
-
-    memset(&cr, 0, sizeof(RIL_CarrierRestrictions));
-
-    if (s_callbacks.version < 14) {
-        RLOGE("Unsuppoted RIL version %d, min version expected %d",
-              s_callbacks.version, 14);
-        RIL_onRequestComplete(pRI, RIL_E_REQUEST_NOT_SUPPORTED, NULL, 0);
-        return;
-    }
-
-    status = p.readInt32(&t);
-    if (status != NO_ERROR) {
-        goto invalid;
-    }
-    allowed_carriers = (RIL_Carrier *)calloc(t, sizeof(RIL_Carrier));
-    if (allowed_carriers == NULL) {
-        RLOGE("Memory allocation failed for request %s", requestToString(pRI->pCI->requestNumber));
-        goto exit;
-    }
-    cr.len_allowed_carriers = t;
-    cr.allowed_carriers = allowed_carriers;
-
-    status = p.readInt32(&t);
-    if (status != NO_ERROR) {
-        goto invalid;
-    }
-    excluded_carriers = (RIL_Carrier *)calloc(t, sizeof(RIL_Carrier));
-    if (excluded_carriers == NULL) {
-        RLOGE("Memory allocation failed for request %s", requestToString(pRI->pCI->requestNumber));
-        goto exit;
-    }
-    cr.len_excluded_carriers = t;
-    cr.excluded_carriers = excluded_carriers;
-
-    startRequest;
-    appendPrintBuf("%s len_allowed_carriers:%d, len_excluded_carriers:%d,",
-                   printBuf, cr.len_allowed_carriers, cr.len_excluded_carriers);
-
-    appendPrintBuf("%s allowed_carriers:", printBuf);
-    for (int32_t i = 0; i < cr.len_allowed_carriers; i++) {
-        RIL_Carrier *p_cr = allowed_carriers + i;
-        p_cr->mcc = strdupReadString(p);
-        p_cr->mnc = strdupReadString(p);
-        status = p.readInt32(&t);
-        p_cr->match_type = static_cast<RIL_CarrierMatchType>(t);
-        if (status != NO_ERROR) {
-            goto invalid;
-        }
-        p_cr->match_data = strdupReadString(p);
-        appendPrintBuf("%s [%d mcc:%s, mnc:%s, match_type:%d, match_data:%s],",
-                       printBuf, i, p_cr->mcc, p_cr->mnc, p_cr->match_type, p_cr->match_data);
-    }
-
-    for (int32_t i = 0; i < cr.len_excluded_carriers; i++) {
-        RIL_Carrier *p_cr = excluded_carriers + i;
-        p_cr->mcc = strdupReadString(p);
-        p_cr->mnc = strdupReadString(p);
-        status = p.readInt32(&t);
-        p_cr->match_type = static_cast<RIL_CarrierMatchType>(t);
-        if (status != NO_ERROR) {
-            goto invalid;
-        }
-        p_cr->match_data = strdupReadString(p);
-        appendPrintBuf("%s [%d mcc:%s, mnc:%s, match_type:%d, match_data:%s],",
-                       printBuf, i, p_cr->mcc, p_cr->mnc, p_cr->match_type, p_cr->match_data);
-    }
-
-    closeRequest;
-    printRequest(pRI->token, pRI->pCI->requestNumber);
-
-    CALL_ONREQUEST(pRI->pCI->requestNumber,
-                &cr,
-                sizeof(RIL_CarrierRestrictions),
-                pRI, pRI->socket_id);
-
-    goto exit;
-
-invalid:
-    invalidCommandBlock(pRI);
-    RIL_onRequestComplete(pRI, RIL_E_INVALID_ARGUMENTS, NULL, 0);
-exit:
-    if (allowed_carriers != NULL) {
-        free(allowed_carriers);
-    }
-    if (excluded_carriers != NULL) {
-        free(excluded_carriers);
-    }
-    return;
-}
-
-static void dispatchGetCarrierRestrictions(Parcel &p, RequestInfo *pRI) {
-    if (s_callbacks.version < 14) {
-        RLOGE("Unsupported RIL version %d, min version expected %d",
-              s_callbacks.version, 14);
-        RIL_onRequestComplete(pRI, RIL_E_REQUEST_NOT_SUPPORTED, NULL, 0);
-        return;
-    }
-    dispatchVoid(p, pRI);
-}
-
-/**
  * Callee expects const RIL_CafOpenChannelParams *
  * Payload is:
  * byte p2
@@ -2297,92 +2193,6 @@ static void dispatchOpenChannelWithP2 (Parcel &p, RequestInfo *pRI) {
 #endif
 
     return;
-invalid:
-    invalidCommandBlock(pRI);
-    return;
-}
-
-static void dispatchAdnRecord(Parcel &p, RequestInfo *pRI) {
-    int32_t  t;
-    status_t status;
-    RIL_AdnRecordInfo adnInfo;
-
-    status = p.readInt32(&t);
-    adnInfo.record_id = (int) t;
-
-    if (status != NO_ERROR) {
-        goto invalid;
-    }
-
-    adnInfo.name = strdupReadString(p);
-    adnInfo.number = strdupReadString(p);
-
-    startRequest;
-    appendPrintBuf("%srecordIndex=%d, name=%s, number=%s, ", printBuf,
-                    (int)adnInfo.record_id, adnInfo.name, adnInfo.number);
-
-    status = p.readInt32(&t);
-    adnInfo.email_elements= (int) t;
-
-    if (status != NO_ERROR) {
-        goto invalid;
-    }
-
-    appendPrintBuf("%semailElements=%d, ", printBuf, adnInfo.email_elements);
-
-    for (int i = 0 ; i < adnInfo.email_elements ; i++) {
-        adnInfo.email[i] = strdupReadString(p);
-        appendPrintBuf("%snvwi.itemID=%d, email=%s, ", printBuf, i, adnInfo.email[i]);
-    }
-
-    status = p.readInt32(&t);
-    adnInfo.anr_elements= (int) t;
-
-    if (status != NO_ERROR) {
-        goto invalid;
-    }
-
-    appendPrintBuf("%sanrElements=%d, ", printBuf, adnInfo.anr_elements);
-
-    for (int i = 0 ; i < adnInfo.anr_elements ; i++) {
-        adnInfo.ad_number[i] = strdupReadString(p);
-        appendPrintBuf("%snvwi.itemID=%d, anr=%s, ", printBuf, i, adnInfo.ad_number[i]);
-    }
-
-    closeRequest;
-
-    printRequest(pRI->token, pRI->pCI->requestNumber);
-
-    CALL_ONREQUEST(pRI->pCI->requestNumber, &adnInfo, sizeof(adnInfo), pRI, pRI->socket_id);
-
-#ifdef MEMSET_FREED
-    memsetString(adnInfo.name);
-    memsetString(adnInfo.number);
-#endif
-
-    free(adnInfo.name);
-    free(adnInfo.number);
-
-    for (int i = 0 ; i < adnInfo.email_elements ; i++) {
-#ifdef MEMSET_FREED
-        memsetString (adnInfo.email[i]);
-#endif
-        free(adnInfo.email[i]);
-    }
-
-    for (int i = 0 ; i < adnInfo.anr_elements ; i++) {
-#ifdef MEMSET_FREED
-        memsetString (adnInfo.ad_number[i]);
-#endif
-        free(adnInfo.ad_number[i]);
-    }
-
-#ifdef MEMSET_FREED
-    memset(&adnInfo, 0, sizeof(adnInfo));
-#endif
-
-    return;
-
 invalid:
     invalidCommandBlock(pRI);
     return;
@@ -2857,11 +2667,26 @@ static int responseDataCallListV11(Parcel &p, void *response, size_t responselen
                 return RIL_ERRNO_INVALID_RESPONSE;
     }
 
-    if (responselen % sizeof(RIL_Data_Call_Response_v11) != 0) {
-        RLOGE("invalid response length %d expected multiple of %d",
-        (int)responselen, (int)sizeof(RIL_Data_Call_Response_v11));
-        return RIL_ERRNO_INVALID_RESPONSE;
-    }
+static int responseDataCallList(Parcel &p, void *response, size_t responselen)
+{
+    if (s_callbacks.version < 5) {
+        RLOGD("responseDataCallList: v4");
+        return responseDataCallListV4(p, response, responselen);
+    } else if (s_callbacks.version < 10) {
+        return responseDataCallListV6(p, response, responselen);
+    } else if (s_callbacks.version == 10) {
+        return responseDataCallListV9(p, response, responselen);
+    } else {
+        if (response == NULL && responselen != 0) {
+            RLOGE("invalid response: NULL");
+            return RIL_ERRNO_INVALID_RESPONSE;
+        }
+
+        if (responselen % sizeof(RIL_Data_Call_Response_v11) != 0) {
+            RLOGE("invalid response length %d expected multiple of %d",
+                    (int)responselen, (int)sizeof(RIL_Data_Call_Response_v11));
+            return RIL_ERRNO_INVALID_RESPONSE;
+        }
 
     // Write version
     p.writeInt32(11);
@@ -3148,12 +2973,8 @@ static int responseCdmaInformationRecords(Parcel &p,
                          CDMA_ALPHA_INFO_BUFFER_LENGTH);
                     return RIL_ERRNO_INVALID_RESPONSE;
                 }
-                string8 = (char*) calloc(infoRec->rec.display.alpha_len + 1, sizeof(char));
-                if (string8 == NULL) {
-                    RLOGE("Memory allocation failed for responseCdmaInformationRecords");
-                    closeRequest;
-                    return RIL_ERRNO_NO_MEMORY;
-                }
+                string8 = (char*) malloc((infoRec->rec.display.alpha_len + 1)
+                                                             * sizeof(char) );
                 for (int i = 0 ; i < infoRec->rec.display.alpha_len ; i++) {
                     string8[i] = infoRec->rec.display.alpha_buf[i];
                 }
@@ -3514,30 +3335,22 @@ static int responseSimRefresh(Parcel &p, void *response, size_t responselen) {
     }
 
     startResponse;
-    if (s_callbacks.version <= LAST_IMPRECISE_RIL_VERSION) {
-        if (s_callbacks.version >= 7) {
-            responseSimRefreshV7(p, response);
-        } else {
-            int *p_cur = ((int *) response);
-            p.writeInt32(p_cur[0]);
-            p.writeInt32(p_cur[1]);
-            writeStringToParcel(p, NULL);
+    if (s_callbacks.version >= 7) {
+        RIL_SimRefreshResponse_v7 *p_cur = ((RIL_SimRefreshResponse_v7 *) response);
+        p.writeInt32(p_cur->result);
+        p.writeInt32(p_cur->ef_id);
+        writeStringToParcel(p, p_cur->aid);
 
-            appendPrintBuf("%sresult=%d, ef_id=%d",
-                    printBuf,
-                    p_cur[0],
-                    p_cur[1]);
-        }
-    } else { // RIL version >= 13
-        if (responselen % sizeof(RIL_SimRefreshResponse_v7) != 0) {
-            RLOGE("Data structure expected is RIL_SimRefreshResponse_v7");
-            if (!isDebuggable()) {
-                return RIL_ERRNO_INVALID_RESPONSE;
-            } else {
-                assert(0);
-            }
-        }
-        responseSimRefreshV7(p, response);
+        appendPrintBuf("%sresult=%d, ef_id=%d, aid=%s",
+                printBuf,
+                p_cur->result,
+                p_cur->ef_id,
+                p_cur->aid);
+    } else {
+        int *p_cur = ((int *) response);
+        p.writeInt32(p_cur[0]);
+        p.writeInt32(p_cur[1]);
+        writeStringToParcel(p, NULL);
 
     }
     closeResponse;
@@ -6038,10 +5851,17 @@ requestToString(int request) {
         case RIL_UNSOL_DC_RT_INFO_CHANGED: return "UNSOL_DC_RT_INFO_CHANGED";
         case RIL_REQUEST_SHUTDOWN: return "SHUTDOWN";
         case RIL_UNSOL_RADIO_CAPABILITY: return "RIL_UNSOL_RADIO_CAPABILITY";
-        case RIL_RESPONSE_ACKNOWLEDGEMENT: return "RIL_RESPONSE_ACKNOWLEDGEMENT";
-        case RIL_UNSOL_PCO_DATA: return "RIL_UNSOL_PCO_DATA";
-        case RIL_UNSOL_RESPONSE_ADN_INIT_DONE: return "RIL_UNSOL_RESPONSE_ADN_INIT_DONE";
-        case RIL_UNSOL_RESPONSE_ADN_RECORDS: return "RIL_UNSOL_RESPONSE_ADN_RECORDS";
+        #ifdef VENDOR_EDIT 
+		case RIL_UNSOL_OEM_NV_BACKUP_RESPONSE: return "RIL_UNSOL_OEM_NV_BACKUP_RESPONSE";
+        case RIL_REQUEST_GET_BAND_MODE: return "RIL_REQUEST_GET_BAND_MODE";
+		case RIL_REQUEST_FACTORY_MODE_MODEM_GPIO: return "RIL_REQUEST_FACTORY_MODE_MODEM_GPIO";
+        case RIL_REQUEST_GET_RFFE_DEV_INFO: return "GET_RFFE_DEV_INFO";
+		case RIL_REQUEST_SIM_TRANSMIT_BASIC: return "SIM_TRANSMIT_BASIC";
+        case RIL_REQUEST_SIM_TRANSMIT_CHANNEL: return "SIM_TRANSMIT_CHANNEL";
+        #endif /* VENDOR_EDIT */
+		case RIL_REQUEST_GO_TO_ERROR_FATAL: return "RIL_REQUEST_GO_TO_ERROR_FATAL";
+		case RIL_REQUEST_GET_MDM_BASEBAND: return "RIL_REQUEST_GET_MDM_BASEBAND";
+		case RIL_REQUEST_SET_TDD_LTE: return "RIL_REQUEST_SET_TDD_LTE";	
         default: return "<unknown request>";
     }
 }

@@ -596,6 +596,10 @@ typedef struct {
 } RIL_Dial;
 
 typedef struct {
+    #ifdef VENDOR_EDIT 
+    int cla;
+    #endif /* VENDOR_EDIT */
+
     int command;    /* one of the commands listed for TS 27.007 +CRSM*/
     int fileid;     /* EF id */
     char *path;     /* "pathid" from TS 27.007 +CRSM command.
@@ -610,6 +614,10 @@ typedef struct {
 } RIL_SIM_IO_v5;
 
 typedef struct {
+    #ifdef VENDOR_EDIT 
+    int cla;
+    #endif /* VENDOR_EDIT */
+
     int command;    /* one of the commands listed for TS 27.007 +CRSM*/
     int fileid;     /* EF id */
     char *path;     /* "pathid" from TS 27.007 +CRSM command.
@@ -819,6 +827,7 @@ typedef struct {
 typedef enum {
     PDP_FAIL_NONE = 0, /* No error, connection ok */
 
+    PDP_FAIL_ACTIVATION_NOT_ALLOWED  = 0x07,
     /* an integer cause code defined in TS 24.008
        section 6.1.3.1.3 or TS 24.301 Release 8+ Annex B.
        If the implementation does not have access to the exact cause codes,
@@ -910,6 +919,8 @@ typedef enum {
     PDP_FAIL_TETHERED_CALL_ACTIVE = -6,   /* data call was disconnected by modem because tethered
                                              mode was up on same APN/data profile - no retry until
                                              tethered call is off */
+    PDP_FAIL_IPV4_CALL_THROTTLED = -7,
+    PDP_FAIL_IPV6_CALL_THROTTLED = -8,
 
     PDP_FAIL_ERROR_UNSPECIFIED = 0xffff,  /* retry silently. Will be deprecated soon as
                                              new error codes are added making this unnecessary */
@@ -1753,25 +1764,6 @@ typedef struct {
     char * aidPtr; /* AID value, See ETSI 102.221 and 101.220*/
 
 } RIL_CafOpenChannelParams;
-
-#define RIL_NUM_ADN_RECORDS      10
-#define RIL_MAX_NUM_AD_COUNT     4
-#define RIL_MAX_NUM_EMAIL_COUNT  2
-
-typedef struct {
-    int       record_id;
-    char*     name;
-    char*     number;
-    int       email_elements;
-    char*     email[RIL_MAX_NUM_EMAIL_COUNT];
-    int       anr_elements;
-    char*     ad_number[RIL_MAX_NUM_AD_COUNT];
-} RIL_AdnRecordInfo;
-
-typedef struct {
-    int               record_elements;
-    RIL_AdnRecordInfo adn_record_info[RIL_NUM_ADN_RECORDS];
-} RIL_AdnRecord_v1;
 
 /**
  * RIL_REQUEST_GET_SIM_STATUS
@@ -5165,56 +5157,6 @@ typedef struct {
 #define RIL_REQUEST_GET_ACTIVITY_INFO 135
 
 /**
- * RIL_REQUEST_SET_CARRIER_RESTRICTIONS
- *
- * Set carrier restrictions for this sim slot. Expected modem behavior:
- *  If never receives this command
- *  - Must allow all carriers
- *  Receives this command with data being NULL
- *  - Must allow all carriers. If a previously allowed SIM is present, modem must not reload
- *    the SIM. If a previously disallowed SIM is present, reload the SIM and notify Android.
- *  Receives this command with a list of carriers
- *  - Only allow specified carriers, persist across power cycles and FDR. If a present SIM
- *    is in the allowed list, modem must not reload the SIM. If a present SIM is *not* in
- *    the allowed list, modem must detach from the registered network and only keep emergency
- *    service, and notify Android SIM refresh reset with new SIM state being
- *    RIL_CARDSTATE_RESTRICTED. Emergency service must be enabled.
- *
- * "data" is const RIL_CarrierRestrictions *
- * A list of allowed carriers and possibly a list of excluded carriers.
- * If data is NULL, means to clear previous carrier restrictions and allow all carriers
- *
- * "response" is int *
- * ((int *)data)[0] contains the number of allowed carriers which have been set correctly.
- * On success, it should match the length of list data->allowed_carriers.
- * If data is NULL, the value must be 0.
- *
- * Valid errors:
- *  RIL_E_SUCCESS
- *  RIL_E_INVALID_ARGUMENTS
- *  RIL_E_RADIO_NOT_AVAILABLE
- *  RIL_E_REQUEST_NOT_SUPPORTED
- */
-#define RIL_REQUEST_SET_CARRIER_RESTRICTIONS 136
-
-/**
- * RIL_REQUEST_GET_CARRIER_RESTRICTIONS
- *
- * Get carrier restrictions for this sim slot. Expected modem behavior:
- *  Return list of allowed carriers, or null if all carriers are allowed.
- *
- * "data" is NULL
- *
- * "response" is const RIL_CarrierRestrictions *.
- * If response is NULL, it means all carriers are allowed.
- *
- * Valid errors:
- *  RIL_E_SUCCESS
- *  RIL_E_RADIO_NOT_AVAILABLE
- *  RIL_E_REQUEST_NOT_SUPPORTED
- */
-#define RIL_REQUEST_GET_CARRIER_RESTRICTIONS 137
-/**
  * RIL_REQUEST_SIM_GET_ATR
  *
  * Get the ATR from SIM Card
@@ -5232,7 +5174,54 @@ typedef struct {
  * RADIO_NOT_AVAILABLE (radio resetting)
  * GENERIC_FAILURE
  */
-#define RIL_REQUEST_SIM_GET_ATR 138
+#define RIL_REQUEST_SIM_GET_ATR 136
+#ifdef VENDOR_EDIT 
+
+#define RIL_REQUEST_OEM_BASE	137
+
+#define RIL_REQUEST_FACTORY_MODE_NV_PROCESS 138 //(RIL_REQUEST_OEM_BASE + 1)
+
+#define RIL_REQUEST_FACTORY_MODE_MODEM_GPIO 139 //(RIL_REQUEST_OEM_BASE + 2)
+
+/**
+ * RIL_REQUEST_GET_BAND_MODE
+ *
+ *  get current band mode 
+ *
+ * "response" is int
+ *
+ * Valid errors:
+ *  SUCCESS
+ *  GENERIC_FAILURE
+ */
+
+#define RIL_REQUEST_GET_BAND_MODE 140 //(RIL_REQUEST_OEM_BASE + 3)
+
+//#ifdef VENDOR_EDIT
+#define RIL_REQUEST_REPORT_BOOTUPNVRESTOR_STATE 141 //(RIL_REQUEST_OEM_BASE + 4)  
+
+#define RIL_REQUEST_GET_RFFE_DEV_INFO 142 //(RIL_REQUEST_OEM_BASE + 5)  
+
+// "data" is a const RIL_SIM_IO *
+// "response" is a const RIL_SIM_IO_Response *
+#define RIL_REQUEST_SIM_TRANSMIT_BASIC 144 //(RIL_REQUEST_OEM_BASE+7)
+// "data" is a const char * containing the AID of the applet
+// "response" is a int * containing the channel id
+//#define RIL_REQUEST_SIM_OPEN_CHANNEL 145 //(RIL_REQUEST_OEM_BASE+8)
+// "data" is a const int * containing the channel id
+// "response" is NULL
+//#define RIL_REQUEST_SIM_CLOSE_CHANNEL 146 //(RIL_REQUEST_OEM_BASE+9)
+// "data" is a const RIL_SIM_IO *
+// "response" is a const RIL_SIM_IO_Response *
+#define RIL_REQUEST_SIM_TRANSMIT_CHANNEL 147 //(RIL_REQUEST_OEM_BASE+10)
+
+#endif /* VENDOR_EDIT */
+
+#define RIL_REQUEST_GO_TO_ERROR_FATAL 148 //(RIL_REQUEST_OEM_BASE+11)
+#define RIL_REQUEST_GET_MDM_BASEBAND  149 //(RIL_REQUEST_OEM_BASE+12)
+//}add end
+
+#define RIL_REQUEST_SET_TDD_LTE 150  //(RIL_REQUEST_OEM_BASE+13)
 
 /**
  * RIL_REQUEST_CAF_SIM_OPEN_CHANNEL_WITH_P2
@@ -5255,59 +5244,9 @@ typedef struct {
  *  MISSING_RESOURCE
  *  NO_SUCH_ELEMENT
  */
-#define RIL_REQUEST_CAF_SIM_OPEN_CHANNEL_WITH_P2 139
-
-/**
- * RIL_REQUEST_GET_ADN_RECORD
- *
- * Requests ADN count record of the SIM card
- *
- * "data" is NULL
- *
- * "response" is const int *
- * ((int *)data)[0] is the max adn count.
- * ((int *)data)[1] is the valid adn count.
- * ((int *)data)[2] is the max email count.
- * ((int *)data)[3] is the max anr count.
- *
- * Valid errors:
- *  SUCCESS
- *  GENERIC_FAILURE
- */
-#define RIL_REQUEST_GET_ADN_RECORD 140
-
-/**
- * RIL_REQUEST_UPDATE_ADN_RECORD
- *
- * Requests ADN count of the the SIM card
- *
- * "data" is RIL_AdnRecordInfo *
- *
- * "response" is const int *
- *
- * Valid errors:
- *  Must never fail
- */
-#define RIL_REQUEST_UPDATE_ADN_RECORD 141
+#define RIL_REQUEST_CAF_SIM_OPEN_CHANNEL_WITH_P2 137
 
 /***********************************************************************/
-
-/**
- * RIL_RESPONSE_ACKNOWLEDGEMENT
- *
- * This is used by Asynchronous solicited messages and Unsolicited messages
- * to acknowledge the receipt of those messages in RIL.java so that the ack
- * can be used to let ril.cpp to release wakelock.
- *
- * Valid errors
- * SUCCESS
- * RADIO_NOT_AVAILABLE
- */
-
-#define RIL_RESPONSE_ACKNOWLEDGEMENT 800
-
-/***********************************************************************/
-
 
 #define RIL_UNSOL_RESPONSE_BASE 1000
 
@@ -5905,37 +5844,13 @@ typedef struct {
  */
 #define RIL_UNSOL_LCEDATA_RECV 1045
 
- /**
-  * RIL_UNSOL_PCO_DATA
-  *
-  * Called when there is new Carrier PCO data received for a data call.  Ideally
-  * only new data will be forwarded, though this is not required.  Multiple
-  * boxes of carrier PCO data for a given call should result in a series of
-  * RIL_UNSOL_PCO_DATA calls.
-  *
-  * "data" is the RIL_PCO_Data structure.
-  *
-  */
-#define RIL_UNSOL_PCO_DATA 1046
-/**
- * RIL_UNSOL_RESPONSE_ADN_INIT_DONE
- *
- * Called when the ADN has already init done,
- *
- * "data" is NULL.
- *
- */
-#define RIL_UNSOL_RESPONSE_ADN_INIT_DONE 1047
+//#ifdef VENDOR_EDIT
+#define RIL_UNSOL_OEM_NV_BACKUP_RESPONSE 1046
+//#endif
 
-/**
- * RIL_UNSOL_RESPONSE_ADN_RECORDS
- *
- * Called when there is a group of ADN record report,
- *
- * "data" is the RIL_ADN structure.
- *
- */
-#define RIL_UNSOL_RESPONSE_ADN_RECORDS 1048
+//#ifdef VENDOR_EDIT
+#define RIL_UNSOL_RAC_UPDATE  1047    //czp 1042-->1044  
+//#endif /* VENDOR_EDIT */
 
 /***********************************************************************/
 
